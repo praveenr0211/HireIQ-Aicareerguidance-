@@ -1,9 +1,11 @@
 import axios from "axios";
 
 const API_BASE_URL =
-  process.env.REACT_APP_API_URL || "http://localhost:5000/api";
+  process.env.REACT_APP_API_URL ||
+  "https://aiskillgapanalyzer.onrender.com/api";
 const AUTH_BASE_URL =
-  process.env.REACT_APP_API_URL || "http://localhost:5000/auth";
+  process.env.REACT_APP_AUTH_URL ||
+  "https://aiskillgapanalyzer.onrender.com/auth";
 
 const api = axios.create({
   baseURL: API_BASE_URL,
