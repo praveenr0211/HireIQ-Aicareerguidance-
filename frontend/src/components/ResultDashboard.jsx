@@ -8,7 +8,6 @@ const ResultDashboard = ({ analysis, jobRole, onReset }) => {
   const { match_percentage, matched_skills, missing_skills, learning_roadmap } =
     analysis;
   const [trackingSkills, setTrackingSkills] = useState(false);
-  const [trackedSkillsCount, setTrackedSkillsCount] = useState(0);
 
   // Calculate color based on match percentage
   const getMatchColor = (percentage) => {
@@ -265,7 +264,6 @@ const ResultDashboard = ({ analysis, jobRole, onReset }) => {
         }
       }
 
-      setTrackedSkillsCount(successCount);
       alert(
         `Successfully added ${successCount} skills to your progress tracker!`
       );
