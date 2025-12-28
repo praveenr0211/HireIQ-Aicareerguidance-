@@ -1,38 +1,39 @@
-const db = require("./config/database");
+const pool = require("./config/database");
 
 /**
  * Initialize database schema and seed data
  */
-function initDatabase() {
+async function initDatabase() {
   console.log("🔧 Initializing database...");
 
-  // Create job_skills table
-  db.run(
-    `
-    CREATE TABLE IF NOT EXISTS job_skills (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      job_role TEXT NOT NULL UNIQUE,
-      required_skills TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `,
-    (err) => {
-      if (err) {
-        console.error("❌ Error creating table:", err);
-        return;
-      }
-      console.log("✅ Table created successfully");
+  try {
+    // Create job_skills table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS job_skills (
+        id SERIAL PRIMARY KEY,
+        job_role TEXT NOT NULL UNIQUE,
+        required_skills TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
 
-      // Seed data
-      seedData();
-    }
-  );
+    console.log("✅ Table created successfully");
+
+    // Seed data
+    await seedData();
+
+    console.log("🎉 Database initialization complete");
+    process.exit(0);
+  } catch (err) {
+    console.error("❌ Error creating table:", err);
+    process.exit(1);
+  }
 }
 
 /**
  * Seed job roles and required skills
  */
-function seedData() {
+async function seedData() {
   const jobRoles = [
     {
       job_role: "Frontend Developer",
@@ -196,34 +197,20 @@ function seedData() {
     },
   ];
 
-  const insertStmt = db.prepare(
-    "INSERT OR IGNORE INTO job_skills (job_role, required_skills) VALUES (?, ?)"
-  );
+  try {
+    for (const role of jobRoles) {
+      await pool.query(
+        "INSERT INTO job_skills (job_role, required_skills) VALUES ($1, $2) ON CONFLICT (job_role) DO NOTHING",
+        [role.job_role, role.required_skills]
+      );
+      console.log(`✅ Inserted: ${role.job_role}`);
+    }
 
-  let insertedCount = 0;
-  jobRoles.forEach((role) => {
-    insertStmt.run(role.job_role, role.required_skills, (err) => {
-      if (err) {
-        console.error(`❌ Error inserting ${role.job_role}:`, err);
-      } else {
-        insertedCount++;
-        console.log(`✅ Inserted: ${role.job_role}`);
-      }
-    });
-  });
-
-  insertStmt.finalize(() => {
-    console.log(`\n🎉 Database initialized with ${insertedCount} job roles`);
-
-    // Close database connection
-    db.close((err) => {
-      if (err) {
-        console.error("❌ Error closing database:", err);
-      } else {
-        console.log("✅ Database connection closed");
-      }
-    });
-  });
+    console.log(`\n🎉 Database initialized with ${jobRoles.length} job roles`);
+  } catch (err) {
+    console.error("❌ Error inserting data:", err);
+    throw err;
+  }
 }
 
 // Run initialization

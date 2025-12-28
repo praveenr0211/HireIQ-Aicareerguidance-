@@ -3,29 +3,21 @@ const db = require("../config/database");
 /**
  * Get user's skill progress
  */
-exports.getProgress = (req, res) => {
+exports.getProgress = async (req, res) => {
   try {
     const userId = req.user.id;
 
     const query = `
       SELECT * FROM skill_progress
-      WHERE user_id = ?
+      WHERE user_id = $1
       ORDER BY started_at DESC
     `;
 
-    db.all(query, [userId], (err, rows) => {
-      if (err) {
-        console.error("Database error:", err);
-        return res.status(500).json({
-          success: false,
-          message: "Error retrieving progress",
-        });
-      }
+    const result = await db.query(query, [userId]);
 
-      res.json({
-        success: true,
-        skills: rows,
-      });
+    res.json({
+      success: true,
+      skills: result.rows,
     });
   } catch (error) {
     console.error("Error:", error);
@@ -39,7 +31,7 @@ exports.getProgress = (req, res) => {
 /**
  * Add or update skill progress
  */
-exports.updateProgress = (req, res) => {
+exports.updateProgress = async (req, res) => {
   try {
     const userId = req.user.id;
     const userEmail = req.user.email;
@@ -57,42 +49,27 @@ exports.updateProgress = (req, res) => {
 
     const query = `
       INSERT INTO skill_progress (user_id, user_email, skill_name, status, notes, completed_at)
-      VALUES (?, ?, ?, ?, ?, ?)
+      VALUES ($1, $2, $3, $4, $5, $6)
       ON CONFLICT(user_id, skill_name) 
-      DO UPDATE SET status = ?, notes = ?, completed_at = ?
+      DO UPDATE SET status = $4, notes = $5, completed_at = $6
     `;
 
-    db.run(
-      query,
-      [
-        userId,
-        userEmail,
-        skill_name,
-        status,
-        notes,
-        completed_at,
-        status,
-        notes,
-        completed_at,
-      ],
-      function (err) {
-        if (err) {
-          console.error("Database error:", err);
-          return res.status(500).json({
-            success: false,
-            message: "Error updating progress",
-          });
-        }
+    await db.query(query, [
+      userId,
+      userEmail,
+      skill_name,
+      status,
+      notes,
+      completed_at,
+    ]);
 
-        // Check for achievements
-        checkAndAwardAchievements(userId, userEmail);
+    // Check for achievements
+    await checkAndAwardAchievements(userId, userEmail);
 
-        res.json({
-          success: true,
-          message: "Progress updated successfully",
-        });
-      }
-    );
+    res.json({
+      success: true,
+      message: "Progress updated successfully",
+    });
   } catch (error) {
     console.error("Error:", error);
     res.status(500).json({
@@ -105,29 +82,21 @@ exports.updateProgress = (req, res) => {
 /**
  * Get user's achievements
  */
-exports.getAchievements = (req, res) => {
+exports.getAchievements = async (req, res) => {
   try {
     const userId = req.user.id;
 
     const query = `
       SELECT * FROM achievements
-      WHERE user_id = ?
+      WHERE user_id = $1
       ORDER BY earned_at DESC
     `;
 
-    db.all(query, [userId], (err, rows) => {
-      if (err) {
-        console.error("Database error:", err);
-        return res.status(500).json({
-          success: false,
-          message: "Error retrieving achievements",
-        });
-      }
+    const result = await db.query(query, [userId]);
 
-      res.json({
-        success: true,
-        achievements: rows,
-      });
+    res.json({
+      success: true,
+      achievements: result.rows,
     });
   } catch (error) {
     console.error("Error:", error);
@@ -141,74 +110,37 @@ exports.getAchievements = (req, res) => {
 /**
  * Get progress statistics
  */
-exports.getStats = (req, res) => {
+exports.getStats = async (req, res) => {
   try {
     const userId = req.user.id;
 
-    const queries = {
-      total: `SELECT COUNT(*) as count FROM skill_progress WHERE user_id = ?`,
-      completed: `SELECT COUNT(*) as count FROM skill_progress WHERE user_id = ? AND status = 'completed'`,
-      inProgress: `SELECT COUNT(*) as count FROM skill_progress WHERE user_id = ? AND status = 'in-progress'`,
-      recentlyCompleted: `
-        SELECT skill_name, completed_at 
-        FROM skill_progress 
-        WHERE user_id = ? AND status = 'completed'
-        ORDER BY completed_at DESC
-        LIMIT 5
-      `,
-    };
+    const totalResult = await db.query(
+      `SELECT COUNT(*) as count FROM skill_progress WHERE user_id = $1`,
+      [userId]
+    );
+    const completedResult = await db.query(
+      `SELECT COUNT(*) as count FROM skill_progress WHERE user_id = $1 AND status = 'completed'`,
+      [userId]
+    );
+    const inProgressResult = await db.query(
+      `SELECT COUNT(*) as count FROM skill_progress WHERE user_id = $1 AND status = 'in-progress'`,
+      [userId]
+    );
+    const recentResult = await db.query(
+      `SELECT skill_name, completed_at 
+       FROM skill_progress 
+       WHERE user_id = $1 AND status = 'completed'
+       ORDER BY completed_at DESC
+       LIMIT 5`,
+      [userId]
+    );
 
-    const stats = {};
-
-    db.get(queries.total, [userId], (err, row) => {
-      if (err) {
-        console.error("Database error (total):", err);
-        return res.status(500).json({
-          success: false,
-          message: "Error retrieving stats",
-        });
-      }
-      stats.total = row.count;
-
-      db.get(queries.completed, [userId], (err, row) => {
-        if (err) {
-          console.error("Database error (completed):", err);
-          return res.status(500).json({
-            success: false,
-            message: "Error retrieving stats",
-          });
-        }
-        stats.completed = row.count;
-
-        db.get(queries.inProgress, [userId], (err, row) => {
-          if (err) {
-            console.error("Database error (inProgress):", err);
-            return res.status(500).json({
-              success: false,
-              message: "Error retrieving stats",
-            });
-          }
-          stats.inProgress = row.count;
-
-          db.all(queries.recentlyCompleted, [userId], (err, rows) => {
-            if (err) {
-              console.error("Database error (recentlyCompleted):", err);
-              return res.status(500).json({
-                success: false,
-                message: "Error retrieving stats",
-              });
-            }
-
-            res.json({
-              success: true,
-              totalSkills: stats.total,
-              completedSkills: stats.completed,
-              inProgressSkills: stats.inProgress,
-              recentlyCompleted: rows,
-            });
-          });
-        });
-      });
+    res.json({
+      success: true,
+      totalSkills: parseInt(totalResult.rows[0].count),
+      completedSkills: parseInt(completedResult.rows[0].count),
+      inProgressSkills: parseInt(inProgressResult.rows[0].count),
+      recentlyCompleted: recentResult.rows,
     });
   } catch (error) {
     console.error("Error:", error);
@@ -222,20 +154,16 @@ exports.getStats = (req, res) => {
 /**
  * Check and award achievements based on progress
  */
-function checkAndAwardAchievements(userId, userEmail) {
-  const query = `
-    SELECT COUNT(*) as completed_count
-    FROM skill_progress
-    WHERE user_id = ? AND status = 'completed'
-  `;
+async function checkAndAwardAchievements(userId, userEmail) {
+  try {
+    const query = `
+      SELECT COUNT(*) as completed_count
+      FROM skill_progress
+      WHERE user_id = $1 AND status = 'completed'
+    `;
 
-  db.get(query, [userId], (err, row) => {
-    if (err) {
-      console.error("Error checking achievements:", err);
-      return;
-    }
-
-    const completedCount = row.completed_count;
+    const result = await db.query(query, [userId]);
+    const completedCount = parseInt(result.rows[0].completed_count);
     const badges = [];
 
     // Define achievement milestones
@@ -249,23 +177,26 @@ function checkAndAwardAchievements(userId, userEmail) {
       badges.push({ type: "skill_legend", name: "Skill Legend" });
 
     // Award new badges
-    badges.forEach((badge) => {
+    for (const badge of badges) {
       const insertQuery = `
-        INSERT OR IGNORE INTO achievements (user_id, user_email, badge_type, badge_name)
-        VALUES (?, ?, ?, ?)
+        INSERT INTO achievements (user_id, user_email, badge_type, badge_name)
+        VALUES ($1, $2, $3, $4)
+        ON CONFLICT (user_id, badge_type) DO NOTHING
       `;
 
-      db.run(
-        insertQuery,
-        [userId, userEmail, badge.type, badge.name],
-        (err) => {
-          if (err) {
-            console.error("Error awarding badge:", err);
-          } else {
-            console.log(`🏆 Badge awarded: ${badge.name} to user ${userId}`);
-          }
-        }
-      );
-    });
-  });
+      try {
+        await db.query(insertQuery, [
+          userId,
+          userEmail,
+          badge.type,
+          badge.name,
+        ]);
+        console.log(`🏆 Badge awarded: ${badge.name} to user ${userId}`);
+      } catch (err) {
+        console.error("Error awarding badge:", err);
+      }
+    }
+  } catch (err) {
+    console.error("Error checking achievements:", err);
+  }
 }

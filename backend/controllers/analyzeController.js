@@ -80,62 +80,61 @@ exports.analyzeSkills = async (req, res) => {
 /**
  * Get required skills for a job role from database
  */
-function getJobSkills(jobRole) {
-  return new Promise((resolve, reject) => {
-    const query = `SELECT required_skills FROM job_skills WHERE LOWER(job_role) = LOWER(?)`;
+async function getJobSkills(jobRole) {
+  const query = `SELECT required_skills FROM job_skills WHERE LOWER(job_role) = LOWER($1)`;
 
-    db.get(query, [jobRole], (err, row) => {
-      if (err) {
-        reject(err);
-      } else if (row) {
-        // Parse JSON or comma-separated skills
-        try {
-          const skills = JSON.parse(row.required_skills);
-          resolve(Array.isArray(skills) ? skills : [row.required_skills]);
-        } catch (e) {
-          // If not JSON, treat as comma-separated
-          const skills = row.required_skills.split(",").map((s) => s.trim());
-          resolve(skills);
-        }
-      } else {
-        resolve(null);
-      }
-    });
-  });
+  try {
+    const result = await db.query(query, [jobRole]);
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    const row = result.rows[0];
+    // Parse JSON or comma-separated skills
+    try {
+      const skills = JSON.parse(row.required_skills);
+      return Array.isArray(skills) ? skills : [row.required_skills];
+    } catch (e) {
+      // If not JSON, treat as comma-separated
+      const skills = row.required_skills.split(",").map((s) => s.trim());
+      return skills;
+    }
+  } catch (err) {
+    throw err;
+  }
 }
 
 /**
  * Save analysis to database for history tracking
  */
-function saveAnalysisToDatabase(user, resumeText, jobRole, analysis) {
-  return new Promise((resolve, reject) => {
-    const query = `
-      INSERT INTO resume_analyses 
-      (user_id, user_email, user_name, job_role, resume_text, match_percentage, matched_skills, missing_skills, learning_roadmap)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `;
+async function saveAnalysisToDatabase(user, resumeText, jobRole, analysis) {
+  const query = `
+    INSERT INTO resume_analyses 
+    (user_id, user_email, user_name, job_role, resume_text, match_percentage, matched_skills, missing_skills, learning_roadmap)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    RETURNING id
+  `;
 
-    const params = [
-      user.id,
-      user.email,
-      user.name,
-      jobRole,
-      resumeText,
-      analysis.match_percentage,
-      JSON.stringify(analysis.matched_skills),
-      JSON.stringify(analysis.missing_skills),
-      JSON.stringify(analysis.learning_roadmap),
-    ];
+  const params = [
+    user.id,
+    user.email,
+    user.name,
+    jobRole,
+    resumeText,
+    analysis.match_percentage,
+    JSON.stringify(analysis.matched_skills),
+    JSON.stringify(analysis.missing_skills),
+    JSON.stringify(analysis.learning_roadmap),
+  ];
 
-    db.run(query, params, function (err) {
-      if (err) {
-        console.error("Error saving analysis:", err);
-        // Don't reject - analysis was successful even if save failed
-        resolve();
-      } else {
-        console.log(`✅ Analysis saved to history (ID: ${this.lastID})`);
-        resolve(this.lastID);
-      }
-    });
-  });
+  try {
+    const result = await db.query(query, params);
+    const insertedId = result.rows[0].id;
+    console.log(`✅ Analysis saved to history (ID: ${insertedId})`);
+    return insertedId;
+  } catch (err) {
+    console.error("Error saving analysis:", err);
+    // Don't throw - analysis was successful even if save failed
+  }
 }

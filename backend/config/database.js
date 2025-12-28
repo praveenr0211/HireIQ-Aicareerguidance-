@@ -1,15 +1,20 @@
-const sqlite3 = require("sqlite3").verbose();
-const path = require("path");
+const { Pool } = require("pg");
 
-const dbPath = path.join(__dirname, "../database.sqlite");
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl:
+    process.env.NODE_ENV === "production"
+      ? { rejectUnauthorized: false }
+      : false,
+});
 
-// Create and connect to database
-const db = new sqlite3.Database(dbPath, (err) => {
+// Test connection
+pool.query("SELECT NOW()", (err, res) => {
   if (err) {
-    console.error("Error connecting to database:", err);
+    console.error("❌ Error connecting to database:", err);
   } else {
-    console.log("✅ Connected to SQLite database");
+    console.log("✅ Connected to PostgreSQL database");
   }
 });
 
-module.exports = db;
+module.exports = pool;

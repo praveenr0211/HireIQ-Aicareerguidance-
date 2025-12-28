@@ -1,63 +1,45 @@
-const sqlite3 = require("sqlite3").verbose();
-const path = require("path");
-
-const dbPath = path.join(__dirname, "database.sqlite");
-const db = new sqlite3.Database(dbPath);
+const pool = require("./config/database");
 
 console.log("🔧 Creating skill_progress table...");
 
-db.serialize(() => {
-  // Create skill_progress table
-  db.run(
-    `
-    CREATE TABLE IF NOT EXISTS skill_progress (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id TEXT NOT NULL,
-      user_email TEXT NOT NULL,
-      skill_name TEXT NOT NULL,
-      status TEXT DEFAULT 'in-progress',
-      started_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      completed_at DATETIME,
-      notes TEXT,
-      UNIQUE(user_id, skill_name)
-    )
-  `,
-    (err) => {
-      if (err) {
-        console.error("❌ Error creating skill_progress table:", err);
-      } else {
-        console.log("✅ skill_progress table created successfully");
-      }
-    }
-  );
+async function initProgressTables() {
+  try {
+    // Create skill_progress table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS skill_progress (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        user_email TEXT NOT NULL,
+        skill_name TEXT NOT NULL,
+        status TEXT DEFAULT 'in-progress',
+        started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        completed_at TIMESTAMP,
+        notes TEXT,
+        UNIQUE(user_id, skill_name)
+      )
+    `);
 
-  // Create achievements table
-  db.run(
-    `
-    CREATE TABLE IF NOT EXISTS achievements (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      user_id TEXT NOT NULL,
-      user_email TEXT NOT NULL,
-      badge_type TEXT NOT NULL,
-      badge_name TEXT NOT NULL,
-      earned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(user_id, badge_type)
-    )
-  `,
-    (err) => {
-      if (err) {
-        console.error("❌ Error creating achievements table:", err);
-      } else {
-        console.log("✅ achievements table created successfully");
-      }
-    }
-  );
-});
+    console.log("✅ skill_progress table created successfully");
 
-db.close((err) => {
-  if (err) {
-    console.error("❌ Error closing database:", err);
-  } else {
-    console.log("✅ Database connection closed");
+    // Create achievements table
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS achievements (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        user_email TEXT NOT NULL,
+        badge_type TEXT NOT NULL,
+        badge_name TEXT NOT NULL,
+        earned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, badge_type)
+      )
+    `);
+
+    console.log("✅ achievements table created successfully");
+    process.exit(0);
+  } catch (err) {
+    console.error("❌ Error creating tables:", err);
+    process.exit(1);
   }
-});
+}
+
+initProgressTables();

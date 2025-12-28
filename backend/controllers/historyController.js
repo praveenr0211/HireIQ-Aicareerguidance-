@@ -3,30 +3,22 @@ const db = require("../config/database");
 /**
  * Get all analyses for a user
  */
-exports.getUserHistory = (req, res) => {
+exports.getUserHistory = async (req, res) => {
   try {
     const userId = req.user.id;
 
     const query = `
       SELECT id, job_role, match_percentage, created_at
       FROM resume_analyses
-      WHERE user_id = ?
+      WHERE user_id = $1
       ORDER BY created_at DESC
     `;
 
-    db.all(query, [userId], (err, rows) => {
-      if (err) {
-        console.error("Database error:", err);
-        return res.status(500).json({
-          success: false,
-          message: "Error retrieving history",
-        });
-      }
+    const result = await db.query(query, [userId]);
 
-      res.json({
-        success: true,
-        history: rows,
-      });
+    res.json({
+      success: true,
+      history: result.rows,
     });
   } catch (error) {
     console.error("History error:", error);
@@ -40,7 +32,7 @@ exports.getUserHistory = (req, res) => {
 /**
  * Get specific analysis by ID
  */
-exports.getAnalysisById = (req, res) => {
+exports.getAnalysisById = async (req, res) => {
   try {
     const userId = req.user.id;
     const analysisId = req.params.id;
@@ -48,37 +40,30 @@ exports.getAnalysisById = (req, res) => {
     const query = `
       SELECT *
       FROM resume_analyses
-      WHERE id = ? AND user_id = ?
+      WHERE id = $1 AND user_id = $2
     `;
 
-    db.get(query, [analysisId, userId], (err, row) => {
-      if (err) {
-        console.error("Database error:", err);
-        return res.status(500).json({
-          success: false,
-          message: "Error retrieving analysis",
-        });
-      }
+    const result = await db.query(query, [analysisId, userId]);
 
-      if (!row) {
-        return res.status(404).json({
-          success: false,
-          message: "Analysis not found",
-        });
-      }
-
-      // Parse JSON fields
-      const analysis = {
-        ...row,
-        matched_skills: JSON.parse(row.matched_skills),
-        missing_skills: JSON.parse(row.missing_skills),
-        learning_roadmap: JSON.parse(row.learning_roadmap),
-      };
-
-      res.json({
-        success: true,
-        analysis,
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Analysis not found",
       });
+    }
+
+    const row = result.rows[0];
+    // Parse JSON fields
+    const analysis = {
+      ...row,
+      matched_skills: JSON.parse(row.matched_skills),
+      missing_skills: JSON.parse(row.missing_skills),
+      learning_roadmap: JSON.parse(row.learning_roadmap),
+    };
+
+    res.json({
+      success: true,
+      analysis,
     });
   } catch (error) {
     console.error("Error:", error);
@@ -92,33 +77,25 @@ exports.getAnalysisById = (req, res) => {
 /**
  * Delete an analysis
  */
-exports.deleteAnalysis = (req, res) => {
+exports.deleteAnalysis = async (req, res) => {
   try {
     const userId = req.user.id;
     const analysisId = req.params.id;
 
-    const query = `DELETE FROM resume_analyses WHERE id = ? AND user_id = ?`;
+    const query = `DELETE FROM resume_analyses WHERE id = $1 AND user_id = $2`;
 
-    db.run(query, [analysisId, userId], function (err) {
-      if (err) {
-        console.error("Database error:", err);
-        return res.status(500).json({
-          success: false,
-          message: "Error deleting analysis",
-        });
-      }
+    const result = await db.query(query, [analysisId, userId]);
 
-      if (this.changes === 0) {
-        return res.status(404).json({
-          success: false,
-          message: "Analysis not found",
-        });
-      }
-
-      res.json({
-        success: true,
-        message: "Analysis deleted successfully",
+    if (result.rowCount === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Analysis not found",
       });
+    }
+
+    res.json({
+      success: true,
+      message: "Analysis deleted successfully",
     });
   } catch (error) {
     console.error("Error:", error);
@@ -132,7 +109,7 @@ exports.deleteAnalysis = (req, res) => {
 /**
  * Get comparison data for multiple analyses
  */
-exports.compareAnalyses = (req, res) => {
+exports.compareAnalyses = async (req, res) => {
   try {
     const userId = req.user.id;
     const { ids } = req.body;
@@ -144,45 +121,37 @@ exports.compareAnalyses = (req, res) => {
       });
     }
 
-    const placeholders = ids.map(() => "?").join(",");
+    const placeholders = ids.map((_, i) => `$${i + 1}`).join(",");
     const query = `
       SELECT *
       FROM resume_analyses
-      WHERE id IN (${placeholders}) AND user_id = ?
+      WHERE id IN (${placeholders}) AND user_id = $${ids.length + 1}
       ORDER BY created_at ASC
     `;
 
-    db.all(query, [...ids, userId], (err, rows) => {
-      if (err) {
-        console.error("Database error:", err);
-        return res.status(500).json({
-          success: false,
-          message: "Error comparing analyses",
-        });
-      }
+    const result = await db.query(query, [...ids, userId]);
 
-      if (rows.length < 2) {
-        return res.status(404).json({
-          success: false,
-          message: "Not enough analyses found for comparison",
-        });
-      }
-
-      // Parse JSON fields
-      const analyses = rows.map((row) => ({
-        ...row,
-        matched_skills: JSON.parse(row.matched_skills),
-        missing_skills: JSON.parse(row.missing_skills),
-        learning_roadmap: JSON.parse(row.learning_roadmap),
-      }));
-
-      res.json({
-        success: true,
-        comparison: {
-          analysis1: analyses[0],
-          analysis2: analyses[1],
-        },
+    if (result.rows.length < 2) {
+      return res.status(404).json({
+        success: false,
+        message: "Not enough analyses found for comparison",
       });
+    }
+
+    // Parse JSON fields
+    const analyses = result.rows.map((row) => ({
+      ...row,
+      matched_skills: JSON.parse(row.matched_skills),
+      missing_skills: JSON.parse(row.missing_skills),
+      learning_roadmap: JSON.parse(row.learning_roadmap),
+    }));
+
+    res.json({
+      success: true,
+      comparison: {
+        analysis1: analyses[0],
+        analysis2: analyses[1],
+      },
     });
   } catch (error) {
     console.error("Error:", error);
